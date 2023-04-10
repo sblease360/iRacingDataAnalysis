@@ -1,0 +1,11 @@
+                    for m in chunk_data:                        
+                        m['car_contact'] = 'car contact' in m['lap_events']
+                        m['contact'] = 'contact' in m['lap_events']
+                        m['pitted'] = 'pitted' in m['lap_events']
+                        m['off_track'] = 'off track' in m['lap_events']
+                        m['lost_control'] = 'lost control' in m['lap_events']
+                        m['invalid'] = 'invalid' in m['lap_events']
+                        m['car_reset'] = 'car reset' in m['lap_events']
+                        m['discontinuity'] = 'discontinuity' in m['lap_events']
+                        m['tow'] = 'tow' in m['lap_events']
+                        m['black_flag'] = 'black flag' in m['lap_events']
