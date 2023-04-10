@@ -87,7 +87,6 @@ def getSessionData(sessionID):
     session_params = {
         "subsession_id": sessionID
     }
-    print (session_params)
     data = runQuery(IR_SESSION_URL, True, session_params)
     return json.loads(data)
 
@@ -96,25 +95,39 @@ def getDriverSessionList(sessionData):
     driverSessions = [] 
     for i in session_data["session_results"]:
         for j in i["results"]:
-            driverSessions.append(f"{j['cust_id']}~{i['simsession_number']}")
+            if 'team_id' in j:
+                for k in j['driver_results']:
+                    driverSessions.append(f"{k['cust_id']}~{i['simsession_number']}~{j['team_id']}")
+            else:    
+                driverSessions.append(f"{j['cust_id']}~{i['simsession_number']}~0")
     return driverSessions
 
-def getLapData(session_id, driver_id, simsession_no):
+def getLapData(session_id, driver_id, simsession_no, team_id):
     """Gets the lap data for a specific driver in a specific session"""
     params = {
         "subsession_id": session_id,
         "simsession_number": simsession_no,
         "cust_id": driver_id,
     }
+    if (team_id != 0):
+        params['team_id'] = team_id
     chunk_raw = runQuery(IR_LAPS_URL, True, params)
     chunk_data = json.loads(chunk_raw)
 
     try: 
         data_raw = ''
+        if chunk_data['chunk_info'] == None:
+            #No lap data available for this sub-session
+            return []
         for i in chunk_data['chunk_info']['chunk_file_names']:
             data_raw = data_raw + runQuery(f"{chunk_data['chunk_info']['base_download_url']}{i}")
         return json.loads(data_raw)
     except KeyError as e:
+        print (params)
+        print (chunk_data)
+        print (f"Error getting lap data: {e}")
+        exit()
+    except TypeError as e:
         print (f"Error getting lap data: {e}")
         exit()
 
@@ -164,7 +177,7 @@ def sendEventDetailsToDB(track_name, config_name, subsession_id,
     CURSOR.commit()
     print ("Event details sent to DB")
   
-def sendSessionLevelDataToDB(session_data):
+def processSessionLevelData(session_data):
     sendTrackDetailsToDB(session_data['track']['track_name'], 
                             session_data['track']['config_name'],
                             0,
@@ -211,6 +224,11 @@ class Entry:
         self.isTeam = isTeam
         self.drivers = drivers
 
+class Session:
+    def __init__(self, eventID, session_name):
+        self.eventID = eventID
+        self.session_name = session_name
+
 def processSessionDriverLevelData(session_data):
     """
         Create python objects containing all required data to add to DB
@@ -220,12 +238,16 @@ def processSessionDriverLevelData(session_data):
     drivers = [] # list of Drivers
     cars = [] #list of Cars
     eventEntries = [] #list of Entry 
+    sessions = [] #list of Session
+
+    eventID = session_data['subsession_id']
 
 
     for i in session_data['session_results']:
+        session = Session(eventID, i['simsession_type_name'])
         for j in i['results']:
             car = Car(j['car_id'], j['car_name'], j['car_class_id'], j['car_class_name'])
-            entry = Entry(session_data['subsession_id'], 0, j['car_id'], j['display_name'], False, [])
+            entry = Entry(eventID, 0, j['car_id'], j['display_name'], False, [])
             if 'team_id' in j:
                 # Team entry specific settings
                 entry.isTeam = True
@@ -250,9 +272,23 @@ def processSessionDriverLevelData(session_data):
             if not entry in eventEntries:
                 eventEntries.append(entry)
 
+        if not session in sessions:
+            sessions.append(session)
+
     addDriverDetailsToDB(drivers)
     addCarDetailsToDB(cars)
     addEntryDetailsToDB(eventEntries)
+    addSessionDetailsToDB(sessions)
+
+def addSessionDetailsToDB(sessions):
+    for i in sessions:
+        CURSOR.execute (f"""
+                    EXEC sp_CreateSessionAndSessionType
+                    @EventID = {i.eventID}, 
+                    @SessionTypeName = '{i.session_name}'
+                """)
+    print ("Adding session details to DB")
+    CURSOR.commit()
 
 def addEntryDetailsToDB(entries):
     for i in entries:
@@ -295,15 +331,46 @@ def addDriverDetailsToDB(drivers):
     print ("Adding driver details to DB")
     CURSOR.commit()
 
+class Stint:
+    def __init__(self, driverID, sessionID, stint_num, laps):
+        self.driverID = driverID
+        self.sessionID = sessionID
+        self.stint_num = stint_num
+        self.laps = laps
+
+class Lap:
+    def __init__(self, lap_time, lap_in_stint, lap_in_session, lap_start_time, lap_events):
+        self.lap_time = lap_time
+        self.lap_in_stint = lap_in_stint
+        self.lap_in_session = lap_in_session
+        self.lap_start_time = lap_start_time
+        self.lap_events = lap_events
+
+
+def processLapLevelData(session_data):
+    driver_session_list = getDriverSessionList(session_data)
+    lap_data = []
+    for i in driver_session_list:
+        laps = getLapData(session_data['subsession_id'], i.split("~")[0], i.split("~")[1], i.split('~')[2])
+        for j in laps:
+            lap = Lap(j['lap_time'], 0, j['lap_number'], j['session_time'], [])
+            for k in j['lap_events']:
+                lap.lap_events.append(k)
+            if lap not in lap_data:
+                lap_data.append(lap)
+    print (lap_data)
+
+
 if __name__ == "__main__":
     session_id = input("Please enter comma separated list of session ids: ")
     for i in session_id.split(","):
-        print (i.strip())
         session_data = getSessionData(i.strip())
         
-        sendSessionLevelDataToDB(session_data)
-
+        processSessionLevelData(session_data)
         processSessionDriverLevelData(session_data)
+        processLapLevelData(session_data)
+
+        
 
     print ("Script completed")
     #print (json.dumps(session_data)) 
