@@ -11,7 +11,7 @@ IR_SESSION_URL = "https://members-ng.iracing.com/data/results/get?"
 IR_LAPS_URL = "https://members-ng.iracing.com/data/results/lap_data?"
 
 CONN_STR = (
-    r'DRIVER={SQL Server};'
+    r'DRIVER={ODBC Driver 17 for SQL Server};'
     r'SERVER=(local)\SQLEXPRESS;'
     r'DATABASE=iRacingData;'
     r'Trusted_Connection=yes;'
@@ -64,8 +64,10 @@ def runQuery(url, includeCookie = False, params={}):
     """
     if includeCookie:
         cookie = getCookie()
+        print (f"Querying API: {url} \nwith parameters: {params}")
         r = requests.get(f"{url}", cookies=cookie, params=params)
     else: 
+        print (f"Querying API: {url} \nwith parameters: {params}")
         r = requests.get(f"{url}", params=params)  
 
     # If this returns an unauthorised error then re-auth and try again
@@ -91,15 +93,15 @@ def getSessionData(sessionID):
     return json.loads(data)
 
 def getDriverSessionList(sessionData):
-    """Takes in session data and returns list of DriverID~SimSessionID"""    
+    """Takes in session data and returns list of DriverID~SimSessionID~SessionName~TeamID"""    
     driverSessions = [] 
     for i in session_data["session_results"]:
         for j in i["results"]:
             if 'team_id' in j:
                 for k in j['driver_results']:
-                    driverSessions.append(f"{k['cust_id']}~{i['simsession_number']}~{j['team_id']}")
+                    driverSessions.append(f"{k['cust_id']}~{i['simsession_number']}~{i['simsession_type_name']}~{j['team_id']}")
             else:    
-                driverSessions.append(f"{j['cust_id']}~{i['simsession_number']}~0")
+                driverSessions.append(f"{j['cust_id']}~{i['simsession_number']}~{i['simsession_type_name']}~0")
     return driverSessions
 
 def getLapData(session_id, driver_id, simsession_no, team_id):
@@ -123,8 +125,6 @@ def getLapData(session_id, driver_id, simsession_no, team_id):
             data_raw = data_raw + runQuery(f"{chunk_data['chunk_info']['base_download_url']}{i}")
         return json.loads(data_raw)
     except KeyError as e:
-        print (params)
-        print (chunk_data)
         print (f"Error getting lap data: {e}")
         exit()
     except TypeError as e:
@@ -332,16 +332,15 @@ def addDriverDetailsToDB(drivers):
     CURSOR.commit()
 
 class Stint:
-    def __init__(self, driverID, sessionID, stint_num, laps):
+    def __init__(self, driverID, eventID, sessionName, laps):
         self.driverID = driverID
-        self.sessionID = sessionID
-        self.stint_num = stint_num
+        self.eventID = eventID
+        self.sessionName = sessionName
         self.laps = laps
 
 class Lap:
-    def __init__(self, lap_time, lap_in_stint, lap_in_session, lap_start_time, lap_events):
+    def __init__(self, lap_time, lap_in_session, lap_start_time, lap_events):
         self.lap_time = lap_time
-        self.lap_in_stint = lap_in_stint
         self.lap_in_session = lap_in_session
         self.lap_start_time = lap_start_time
         self.lap_events = lap_events
@@ -350,16 +349,74 @@ class Lap:
 def processLapLevelData(session_data):
     driver_session_list = getDriverSessionList(session_data)
     lap_data = []
+    stint_data = []
     for i in driver_session_list:
-        laps = getLapData(session_data['subsession_id'], i.split("~")[0], i.split("~")[1], i.split('~')[2])
+        laps = getLapData(session_data['subsession_id'], i.split("~")[0], i.split("~")[1], i.split('~')[3])
         for j in laps:
-            lap = Lap(j['lap_time'], 0, j['lap_number'], j['session_time'], [])
+            lap = Lap(j['lap_time']/10000, j['lap_number'], j['session_time'], [])
             for k in j['lap_events']:
                 lap.lap_events.append(k)
             if lap not in lap_data:
                 lap_data.append(lap)
-    print (lap_data)
+            if "pitted" in lap.lap_events:
+                stint = Stint(i.split("~")[0],session_data['subsession_id'],i.split("~")[2],lap_data)
+                if not stint in stint_data:
+                    stint_data.append(stint)
+                lap_data = []
+                del stint
 
+    addLapDetailsToDB(stint_data)
+
+def addLapDetailsToDB(stint_data):
+    offset = 0
+    for i in stint_data:
+        offset += 1
+        for j in i.laps:
+            if len(j.lap_events) > 0:
+                for k in j.lap_events:
+                    print (f"""
+                                EXEC sp_CreateLapAndStintData
+                                @EventID = {i.eventID}, 
+                                @DriverID = '{i.driverID}', 
+                                @SessionName = '{i.sessionName}', 
+                                @LapTime = '{j.lap_time}', 
+                                @LapInSession = '{j.lap_in_session}', 
+                                @StintOffsetNumber = '{offset}', 
+                                @LapEvent = '{k}'
+                            """)
+                    CURSOR.execute (f"""
+                                EXEC sp_CreateLapAndStintData
+                                @EventID = {i.eventID}, 
+                                @DriverID = '{i.driverID}', 
+                                @SessionName = '{i.sessionName}', 
+                                @LapTime = '{j.lap_time}', 
+                                @LapInSession = '{j.lap_in_session}', 
+                                @StintOffsetNumber = '{offset}', 
+                                @LapEvent = '{k}'
+                            """)
+            else:
+                print   (f"""
+                        EXEC sp_CreateLapAndStintData
+                        @EventID = {i.eventID}, 
+                        @DriverID = '{i.driverID}', 
+                        @SessionName = '{i.sessionName}', 
+                        @LapTime = '{j.lap_time}', 
+                        @LapInSession = '{j.lap_in_session}', 
+                        @StintOffsetNumber = '{offset}', 
+                        @LapEvent = ''
+                    """)
+                CURSOR.execute (f"""
+                        EXEC sp_CreateLapAndStintData
+                        @EventID = {i.eventID}, 
+                        @DriverID = '{i.driverID}', 
+                        @SessionName = '{i.sessionName}', 
+                        @LapTime = '{j.lap_time}', 
+                        @LapInSession = '{j.lap_in_session}', 
+                        @StintOffsetNumber = '{offset}', 
+                        @LapEvent = ''
+                    """)
+    print ("Adding driver details to DB")
+    CURSOR.commit()
 
 if __name__ == "__main__":
     session_id = input("Please enter comma separated list of session ids: ")
@@ -370,7 +427,10 @@ if __name__ == "__main__":
         processSessionDriverLevelData(session_data)
         processLapLevelData(session_data)
 
-        
+    #TODO: 
+    # Confirm that heat racing is handled correctly and that separate sessions are being created
+    # Sort out stints and confirm all laps are being stored
+    # Determine if LapInStint is going to be viable, and write logic for it if so        
 
     print ("Script completed")
     #print (json.dumps(session_data)) 
