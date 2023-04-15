@@ -554,4 +554,3 @@ FROM (
 	) ELD ON LA.LapID = ELD.LapID
 	
 GO
-

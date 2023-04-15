@@ -4,7 +4,12 @@ GO
 CREATE VIEW vw_EnhancedLapData AS
 
 SELECT 
-	LA.*
+	SE.EventID
+	, SE.SessionID
+	, DE.DriverID
+	, CA.CarID
+	, CA.ClassID
+	, LA.*
 	, ELD.PositionInClass
 	, ELD.BestLapOnLap
 	, ELD.LeaderLapStartTime
@@ -40,8 +45,6 @@ FROM (
 			  FOR LapEventType IN ([black flag], [car contact], [car reset], [contact], [discontinuity], [invalid], [lost control], [off track], [pitted], [tow])
 			) AS PivotTable
 		) LA
-	INNER JOIN DriverEntries DE
-		ON LA.DriverEntryID = DE.DriverEntryID
 	LEFT OUTER JOIN (
 			SELECT 
 				LA.LapID
@@ -60,4 +63,12 @@ FROM (
 				INNER JOIN Sessions SE
 					ON DE.SessionID = SE.SessionID
 	) ELD ON LA.LapID = ELD.LapID
-
+	INNER JOIN DriverEntries DE
+		ON LA.DriverEntryID = DE.DriverEntryID
+	INNER JOIN EventEntries EE
+		ON DE.EventEntryID = EE.EntryID
+	INNER JOIN Cars CA
+		ON EE.CarID = CA.CarID
+	INNER JOIN Sessions SE 
+		ON DE.SessionID = SE.SessionID
+	
