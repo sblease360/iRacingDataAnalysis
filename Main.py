@@ -137,27 +137,21 @@ def sendTrackDetailsToDB(location, layout, layout_length, corners_per_lap):
                     EXEC sp_CreateLocationAndLayout 
                     @LocationName = '{session_data['track']['track_name']}', 
                     @LayoutName = '{session_data['track']['config_name']}', 
-                    @LayoutLength = 0, 
-                    @LayoutCorners = {session_data['corners_per_lap']}
+                    @TrackLength = 0, 
+                    @Corners = {session_data['corners_per_lap']}
                 """)
     CURSOR.commit()
     print ("Track Details sent to DB")
 
 def sendEventDetailsToDB(track_name, config_name, subsession_id, 
                         session_name, start_datetime_str, hosted, 
-                        official, sim_start_utc, utc_offset, temp, humidity):
-    CURSOR.execute(f"SELECT TOP 1 ID FROM Locations WHERE Name = '{track_name}'") 
-    LocationID = CURSOR.fetchval()
-
-    CURSOR.execute(f"""
-                    SELECT TOP 1 lay.ID FROM Locations loc 
-                    INNER JOIN Layouts lay ON loc.ID = lay.LocationID 
-                    WHERE Loc.Name = '{track_name}' 
-                    AND lay.Name = '{config_name}'
-                    """) 
-    LayoutID = CURSOR.fetchval()
-
+                        official, sim_start_utc, utc_offset, temp, humidity, season_name, year, quarter, sof):
     sim_start = parser.parse(sim_start_utc) + datetime.timedelta(0,60 * utc_offset)
+
+    if quarter is None:
+        quarter = "Null"
+    if sof is None:
+        sof = "Null"
 
     CURSOR.execute (f"""
                     EXEC sp_CreateEvent 
@@ -169,10 +163,14 @@ def sendEventDetailsToDB(track_name, config_name, subsession_id,
                     @EventStartTime = '{parser.parse(start_datetime_str).time()}', 
                     @InSimDate = '{sim_start.date()}', 
                     @InSimStartTime = '{sim_start.time()}', 
-                    @LocationID = {LocationID}, 
-                    @LayoutID = {LayoutID}, 
+                    @LocationName = '{track_name}',
+                    @LayoutName = '{config_name}',
                     @Temp = {temp},
-                    @Humidity = {humidity}
+                    @Humidity = {humidity},
+                    @SeasonName = '{season_name}',
+                    @Year = {year},
+                    @Quarter = {quarter},
+                    @SoF = {sof}
                 """)
     CURSOR.commit()
     print ("Event details sent to DB")
@@ -188,6 +186,15 @@ def processSessionLevelData(session_data):
     else:
         session_name = session_data['season_name']
 
+    if session_data['season_name'] == "Hosted iRacing":
+        year = datetime.datetime.now().year
+        quarter = None
+        sof = None
+    else:
+        year = session_data['season_year']
+        quarter = session_data['season_quarter']
+        sof = session_data['event_strength_of_field']
+
     sendEventDetailsToDB(session_data['track']['track_name'],
                             session_data['track']['config_name'],
                             session_data['subsession_id'],
@@ -198,15 +205,19 @@ def processSessionLevelData(session_data):
                             session_data['weather']['simulated_start_utc_time'],
                             session_data['weather']['simulated_start_utc_offset'],
                             session_data['weather']['temp_value'],
-                            session_data['weather']['rel_humidity']
+                            session_data['weather']['rel_humidity'],
+                            session_data['season_name'],
+                            year,
+                            quarter,
+                            sof
                         )
 class Driver:
-    def __init__(self, d_id, d_name, d_club, oldiRating, newiRating):
-        self.d_id = d_id
-        self.d_name = d_name
-        self.d_club = d_club
-        self.d_oldiRating = oldiRating
-        self.d_newiRating = newiRating
+    def __init__(self, driverID, driverName, driverClub, oldiRating, newiRating):
+        self.driverID = driverID
+        self.driverName = driverName
+        self.driverClub = driverClub
+        self.previRating = oldiRating
+        self.newiRating = newiRating
 
 class Car:
     def __init__(self, carID, carName, classID, className):
@@ -216,18 +227,23 @@ class Car:
         self.className = className
 
 class Entry:
-    def __init__(self, eventID, iRacingID, carID, entryName, isTeam, drivers):
+    def __init__(self, eventID, sessionID, iRacingID, carID, carClassID, entryName, isTeam, drivers, incidents, finishPos):
         self.eventID = eventID
+        self.sessionID = sessionID
         self.iRacingID = iRacingID
         self.carID = carID
+        self.carClassID = carClassID
         self.entryName = entryName
         self.isTeam = isTeam
         self.drivers = drivers
+        self.incidents = incidents
+        self.finishPos = finishPos + 1
 
 class Session:
-    def __init__(self, eventID, simsession_no, session_name):
+    def __init__(self, eventID, simsession_no, session_name, session_type):
         self.eventID = eventID
         self.simsession_no = simsession_no
+        self.session_type = session_type
         self.session_name = session_name
 
 def processSessionDriverLevelData(session_data):
@@ -245,10 +261,10 @@ def processSessionDriverLevelData(session_data):
 
 
     for i in session_data['session_results']:
-        session = Session(eventID, i['simsession_number'], i['simsession_name'])
+        session = Session(eventID, i['simsession_number'],i['simsession_name'], i['simsession_type_name'])
         for j in i['results']:
             car = Car(j['car_id'], j['car_name'], j['car_class_id'], j['car_class_name'])
-            entry = Entry(eventID, 0, j['car_id'], j['display_name'], False, [])
+            entry = Entry(eventID, i['simsession_number'],0, j['car_id'], j['car_class_id'], j['display_name'], False, [], j['incidents'], j['finish_position_in_class'])
             if 'team_id' in j:
                 # Team entry specific settings
                 entry.isTeam = True
@@ -261,7 +277,7 @@ def processSessionDriverLevelData(session_data):
             else:
                 # Single driver setup
                 entry.isTeam = False
-                entry.iRacingID = j['cust_id']                
+                entry.iRacingID = j['cust_id']         
                 driver = Driver(j['cust_id'], j['display_name'], j['club_name'], j['oldi_rating'], j['newi_rating'])
                 entry.drivers.append(driver)            
                 if not driver in drivers:
@@ -278,16 +294,20 @@ def processSessionDriverLevelData(session_data):
 
     addDriverDetailsToDB(drivers)
     addCarDetailsToDB(cars)
-    addEntryDetailsToDB(eventEntries)
     addSessionDetailsToDB(sessions)
+    addEntryDetailsToDB(eventEntries)
+    
 
 def addSessionDetailsToDB(sessions):
     for i in sessions:
+
         CURSOR.execute (f"""
-                    EXEC sp_CreateSessionAndSessionType
+                    EXEC sp_CreateSession
                     @EventID = {i.eventID}, 
-                    @iRacingSessionID = {i.simsession_no},
-                    @SessionTypeName = '{i.session_name}'
+                    @SessioniRacingID = {i.simsession_no},
+                    @SessionType = '{i.session_type}',
+                    @SessionName = '{i.session_name}',
+                    @SimStartTime = ''
                 """)
     print ("Adding session details to DB")
     CURSOR.commit()
@@ -295,16 +315,29 @@ def addSessionDetailsToDB(sessions):
 def addEntryDetailsToDB(entries):
     for i in entries:
         for j in i.drivers:
+
             CURSOR.execute (f"""
-                        EXEC sp_CreateEventEntriesAndEntryDrivers
-                        @EventID = '{i.eventID}', 
-                        @iRacingID = '{i.iRacingID}', 
-                        @CarID = '{i.carID}', 
-                        @Name = '{i.entryName.replace("'"," ")}',
-                        @isTeam = '{i.isTeam}',
-                        @DriverID = '{j.d_id}',
-                        @OldiRating = '{j.d_oldiRating}',
-                        @NewiRating = '{j.d_newiRating}'""")
+                        EXEC sp_CreateSessionEntry
+                        @EventID = {i.eventID}, 
+                        @SessioniRacingID = {i.sessionID},
+                        @SessionEntryiRacingID = {i.iRacingID}, 
+                        @CariRacingID = {i.carID}, 
+                        @CarClassiRacingID = {i.carClassID},
+                        @isTeam = {i.isTeam},
+                        @EntryName = '{i.entryName.replace("'"," ")}',
+                        @FinishPosInClass = {i.finishPos}
+                    """)
+            CURSOR.commit()
+            CURSOR.execute(f"""
+                        EXEC sp_CreateDriverEntry
+                        @EventID = {i.eventID}, 
+                        @SessionEntryiRacingID = {i.iRacingID}, 
+                        @SessioniRacingID = {i.sessionID},
+                        @DriverID = {j.driverID},
+                        @PreviRating = {j.previRating},
+                        @NewiRating = {j.newiRating},
+                        @IncidentCount = {i.incidents}
+                    """)
     print ("Adding Entry details to DB")
     CURSOR.commit()
 
@@ -312,9 +345,9 @@ def addCarDetailsToDB(cars):
     for i in cars:
         CURSOR.execute (f"""
                     EXEC sp_CreateCarsAndClasses
-                    @iRacingID = {i.carID}, 
+                    @CariRacingID = {i.carID}, 
                     @CarName = '{i.carName}', 
-                    @ClassID = '{i.classID}', 
+                    @ClassiRacingID = '{i.classID}', 
                     @ClassName = '{i.className}'
                 """)
     print ("Adding driver details to DB")
@@ -325,17 +358,18 @@ def addDriverDetailsToDB(drivers):
     for i in drivers:
         CURSOR.execute (f"""
                     EXEC sp_CreateDriver
-                    @ID = {i.d_id}, 
-                    @Name = '{i.d_name.replace("'"," ")}', 
-                    @Club = '{i.d_club}', 
-                    @Notes = ''
+                    @DriverID = {i.driverID}, 
+                    @DriverName = '{i.driverName.replace("'"," ")}', 
+                    @DriverClub = '{i.driverClub}', 
+                    @DriverNotes = ''
                 """)
     print ("Adding driver details to DB")
     CURSOR.commit()
 
 class Stint:
-    def __init__(self, driverID, eventID, iRacingSessionID, sessionName, laps):
+    def __init__(self, driverID, entryiRacingID, eventID, iRacingSessionID, sessionName, laps):
         self.driverID = driverID
+        self.entryiRacingID = entryiRacingID
         self.eventID = eventID
         self.iRacingSessionID = iRacingSessionID
         self.sessionName = sessionName
@@ -361,7 +395,7 @@ def processLapLevelData(session_data):
                 lap.lap_events.append(k)
             if lap not in lap_data:
                 lap_data.append(lap)
-        stint = Stint(i.split("~")[0],session_data['subsession_id'],i.split("~")[1],i.split("~")[2],lap_data)
+        stint = Stint(i.split("~")[0], i.split("~")[3], session_data['subsession_id'],i.split("~")[1],i.split("~")[2],lap_data)
         if not stint in stint_data:
             stint_data.append(stint)
             lap_data = []
@@ -380,28 +414,28 @@ def addLapDetailsToDB(stint_data):
                     CURSOR.execute (f"""
                                 EXEC sp_CreateLapData
                                 @EventID = {i.eventID}, 
+                                @SessionEntryiRacingID = '{i.driverID}', 
+                                @SessioniRacingID = {i.iRacingSessionID},
                                 @DriverID = '{i.driverID}', 
-                                @iRacingSessionID = {i.iRacingSessionID},
-                                @SessionName = '{i.sessionName}', 
                                 @LapTime = '{j.lap_time}', 
                                 @LapInSession = '{j.lap_in_session}', 
-                                @TimeInSession = '{j.lap_start_time}', 
-                                @LapEvent = '{k}'
+                                @LapStartTime = '{j.lap_start_time}', 
+                                @LapEventType = '{k}'
                             """)
             else:
                 #print (f"""COUNT: {count} EXEC sp_CreateLapData @EventID = {i.eventID}, @DriverID = '{i.driverID}', @iRacingSessionID = {i.iRacingSessionID}, @SessionName = '{i.sessionName}', @LapTime = '{j.lap_time}', @LapInSession = '{j.lap_in_session}', @LapEvent = '{k}'""")
                 CURSOR.execute (f"""
-                        EXEC sp_CreateLapData
-                        @EventID = {i.eventID}, 
-                        @DriverID = '{i.driverID}', 
-                        @iRacingSessionID = {i.iRacingSessionID},
-                        @SessionName = '{i.sessionName}', 
-                        @LapTime = '{j.lap_time}', 
-                        @LapInSession = '{j.lap_in_session}', 
-                        @TimeInSession = '{j.lap_start_time}', 
-                        @LapEvent = ''
+                            EXEC sp_CreateLapData
+                            @EventID = {i.eventID}, 
+                            @SessionEntryiRacingID = '{i.driverID}', 
+                            @SessioniRacingID = {i.iRacingSessionID},
+                            @DriverID = '{i.driverID}', 
+                            @LapTime = '{j.lap_time}', 
+                            @LapInSession = '{j.lap_in_session}', 
+                            @LapStartTime = '{j.lap_start_time}', 
+                            @LapEventType = ''
                     """)
-    print ("Adding driver details to DB")
+    print ("Adding Laps details to DB")
     CURSOR.commit()
 
 if __name__ == "__main__":
