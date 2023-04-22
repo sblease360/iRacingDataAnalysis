@@ -406,15 +406,16 @@ def processLapLevelData(session_data):
 def addLapDetailsToDB(stint_data):
     count = 0
     for i in stint_data:
+        if i.entryiRacingID == "0":
+            i.entryiRacingID = i.driverID
         for j in i.laps:
             count += 1
             if len(j.lap_events) > 0:
                 for k in j.lap_events:
-                    #print (f"""COUNT: {count} EXEC sp_CreateLapData @EventID = {i.eventID}, @DriverID = '{i.driverID}', @iRacingSessionID = {i.iRacingSessionID}, @SessionName = '{i.sessionName}', @LapTime = '{j.lap_time}', @LapInSession = '{j.lap_in_session}', @LapEvent = '{k}'""")
                     CURSOR.execute (f"""
                                 EXEC sp_CreateLapData
                                 @EventID = {i.eventID}, 
-                                @SessionEntryiRacingID = '{i.driverID}', 
+                                @SessionEntryiRacingID = '{i.entryiRacingID}', 
                                 @SessioniRacingID = {i.iRacingSessionID},
                                 @DriverID = '{i.driverID}', 
                                 @LapTime = '{j.lap_time}', 
@@ -423,11 +424,10 @@ def addLapDetailsToDB(stint_data):
                                 @LapEventType = '{k}'
                             """)
             else:
-                #print (f"""COUNT: {count} EXEC sp_CreateLapData @EventID = {i.eventID}, @DriverID = '{i.driverID}', @iRacingSessionID = {i.iRacingSessionID}, @SessionName = '{i.sessionName}', @LapTime = '{j.lap_time}', @LapInSession = '{j.lap_in_session}', @LapEvent = '{k}'""")
                 CURSOR.execute (f"""
                             EXEC sp_CreateLapData
                             @EventID = {i.eventID}, 
-                            @SessionEntryiRacingID = '{i.driverID}', 
+                            @SessionEntryiRacingID = '{i.entryiRacingID}', 
                             @SessioniRacingID = {i.iRacingSessionID},
                             @DriverID = '{i.driverID}', 
                             @LapTime = '{j.lap_time}', 

@@ -509,7 +509,7 @@ FROM (
 				, LapTime
 				, LapStartTime
 				, LapInSession
-				, CASE WHEN ([black flag] + [car contact] + [car reset] + [contact] + [discontinuity] + [invalid] + [lost control] + [off track] + [pitted] + [tow]) = 0 THEN 1 ELSE 0 END AS CleanLap
+				, CASE WHEN ([black flag] + [car contact] + [car reset] + [contact] + [discontinuity] + [invalid] + [lost control] + [off track] + [tow]) = 0 THEN 1 ELSE 0 END AS CleanLap
 				, [black flag] AS BlackFlag 
 				, [car contact] AS CarContact 
 				, [car reset] AS CarReset
@@ -520,6 +520,15 @@ FROM (
 				, [off track] As OffTrack
 				, [pitted] AS Pitted
 				, [tow] AS Tow
+				,	STUFF(CASE WHEN [black flag] = 1 THEN ', Black Flag' ELSE '' END
+					+ CASE WHEN [car contact] = 1 THEN ', CarContact' ELSE '' END
+					+ CASE WHEN [car reset] = 1 THEN ', Car Reset' ELSE '' END
+					+ CASE WHEN [discontinuity] = 1 THEN ', Discontinuity' ELSE '' END
+					+ CASE WHEN [contact] = 1 THEN ', Contact' ELSE '' END
+					+ CASE WHEN [invalid] = 1 THEN ', Invalid' ELSE '' END
+					+ CASE WHEN [lost control] = 1 THEN ', Lost Control' ELSE '' END
+					+ CASE WHEN [off track] = 1 THEN ', Off Track' ELSE '' END
+					+ CASE WHEN [pitted] = 1 THEN ', In Pits' ELSE '' END, 1, 2, '') AS EventCategory
 			FROM 
 			(
 			  SELECT l.LapID, l.DriverentryID, l.LapTime, l.LapStartTime, l.LapInSession, le.LapEventType
@@ -554,3 +563,72 @@ FROM (
 	) ELD ON LA.LapID = ELD.LapID
 	
 GO
+
+DROP VIEW IF EXISTS vw_PitTimeLoss
+GO 
+
+CREATE VIEW vw_PitTimeLoss
+AS 
+WITH Pivoted
+AS
+(SELECT 
+		LapID
+		, DriverEntryID
+		, LapTime
+		, LapInSession
+		, CASE WHEN ([black flag] + [car contact] + [car reset] + [contact] + [discontinuity] + [invalid] + [lost control] + [off track] + [tow]) = 0  AND LapInSession >= 1 THEN 1 ELSE 0 END AS ValidLapForAverages
+		, PivotTable.pitted AS Pitted	
+	FROM 
+	(
+		SELECT l.LapID, l.DriverentryID, l.LapTime, l.LapStartTime, l.LapInSession, le.LapEventType
+		FROM Laps l 
+		LEFT OUTER JOIN LapEvents le ON l.LapID = le.LapID
+	) AS LapEventData
+	PIVOT
+	(
+		COUNT(LapEventType)
+		FOR LapEventType IN ([black flag], [car contact], [car reset], [contact], [discontinuity], [invalid], [lost control], [off track], [pitted], [tow])
+	) AS PivotTable
+), 
+Averages
+AS 
+(
+	SELECT 
+		DriverEntryID,
+		AVG(Pivoted.LapTime) AS MeanCleanLapTime
+	FROM Pivoted 
+	WHERE ValidLapForAverages = 1
+	GROUP BY DriverEntryID
+)
+
+SELECT 
+	L.*
+	, CASE WHEN Le.LapEventType IS NOT NULL AND LapTime > 0 THEN L.LapTime - A.MeanCleanLapTime END AS LapTimeLoss
+FROM Laps L
+INNER JOIN Averages A
+	ON L.DriverEntryID = A.DriverEntryID
+LEFT OUTER JOIN LapEvents LE
+	ON L.LapID = LE.LapID
+	AND LE.LapEventType = 'pitted'
+
+DROP VIEW IF EXISTS vw_EnhancedEventDetails
+GO 
+
+CREATE VIEW vw_EnhancedEventDetails
+AS
+
+SELECT 
+	EV.SeasonName + ' - ' +
+	EV.Description + ' - ' +
+	LO.LocationName + ' - ' +
+	CASE WHEN LA.LayoutName <> 'N/A' THEN LA.LayoutName + ' - ' ELSE '' END +
+	FORMAT(EV.Date, 'dd MMMM yyyy') + ' - ' + 
+	CAST(EV.EventID	 AS NVARCHAR)
+	 AS EventFilterValue
+	, EV.*
+FROM Events EV
+	INNER JOIN Layouts LA
+		ON EV.LayoutID = La.LayoutID
+	INNER JOIN Locations LO 
+		ON LO.LocationID = LA.LocationID
+	
