@@ -63,6 +63,8 @@ def runQuery(url, includeCookie = False, params={}):
     Otherwise returns text value of initial query
     """
     global apiCallCount 
+    global apiTime
+    tmpTime = datetime.datetime.now()
     apiCallCount += 1
     print (f"API Call {apiCallCount} Query: {url} \nwith parameters: {params}")
 
@@ -77,14 +79,17 @@ def runQuery(url, includeCookie = False, params={}):
     i = json.loads(r.text)
     if 'error' in i and i['error'] == 'Unauthorized':
         authenticate(getCredentials())
+        apiTime += datetime.datetime.now() - tmpTime
         r2 = runQuery(url, includeCookie, params)
         return r2
 
     #if this returns just a link, get the actual data from the link
     if 'link' in i:
+        apiTime += datetime.datetime.now() - tmpTime
         r2 = runQuery(i['link'], includeCookie, params)
         return r2
 
+    apiTime += datetime.datetime.now() - tmpTime
     return r.text
 
 def getSessionData(sessionID):
@@ -455,6 +460,10 @@ def addLapDetailsToDB(stint_data):
 
 if __name__ == "__main__":
     global apiCallCount 
+    global startTime 
+    global apiTime
+    apiTime = datetime.timedelta(0)
+    startTime = datetime.datetime.now()
     apiCallCount = 0
     session_id = input("Please enter comma separated list of session ids: ")
     for i in session_id.split(","):
@@ -464,6 +473,6 @@ if __name__ == "__main__":
         processSessionDriverLevelData(session_data)
         processLapLevelData(session_data)     
 
-        print (f"All data gathering complete and data stored in database\nTotal API Calls: {apiCallCount}")   
+        print (f"All data gathering complete and data stored in database\nTotal API Calls: {apiCallCount}\nTotal Execution time: {datetime.datetime.now() - startTime}\nTime awaiting API responses:{apiTime}")   
 
     exit()

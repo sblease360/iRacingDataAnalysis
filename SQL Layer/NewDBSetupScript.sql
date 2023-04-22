@@ -547,7 +547,8 @@ FROM (
 			SELECT 
 				LA.LapID
 				, RANK() OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS PositionInClass
-				, MIN(LA.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
+				, BL.BestLapOnLap
+				--, MIN(LA.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
 				, MIN(La.LapStartTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS LeaderLapStartTime
 			FROM Laps LA
 				INNER JOIN DriverSessionEntries DE
@@ -560,6 +561,22 @@ FROM (
 					ON CA.ClassID = CL.ClassID
 				INNER JOIN Sessions SE
 					ON EE.SessionID = SE.SessionID
+				LEFT OUTER JOIN (
+					SELECT LA.LapID
+					, MIN(La.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
+					FROM Laps LA
+					INNER JOIN DriverSessionEntries DE
+						ON LA.DriverEntryID = DE.DriverEntryID
+					INNER JOIN SessionEntries EE
+						ON DE.SessionEntryID = EE.SessionEntryID
+					INNER JOIN Cars CA
+						ON EE.CarID = CA.CarID
+					INNER JOIN Classes CL
+						ON CA.ClassID = CL.ClassID
+					INNER JOIN Sessions SE
+						ON EE.SessionID = SE.SessionID
+					WHERE LA.LapTime > 1
+				) BL ON LA.LapID = BL.LapID
 	) ELD ON LA.LapID = ELD.LapID
 	
 GO
@@ -599,17 +616,41 @@ AS
 	FROM Pivoted 
 	WHERE ValidLapForAverages = 1
 	GROUP BY DriverEntryID
-)
-
+),
+Rankings AS (
 SELECT 
 	L.*
 	, CASE WHEN Le.LapEventType IS NOT NULL AND LapTime > 0 THEN L.LapTime - A.MeanCleanLapTime END AS LapTimeLoss
+	, DENSE_RANK() OVER (PARTITION BY L.DriverEntryID ORDER BY LapInSession) AS LapRanking--Ranking by lap
+	, DENSE_RANK() OVER (PARTITION BY L.DriverEntryID, CASE WHEN Le.LapEventType IS NOT NULL AND LapTime > 0 THEN 1 ELSE 0 END ORDER BY LapInSession) AS GroupRanking--Ranking by lap separately for pit and not pit laps
 FROM Laps L
 INNER JOIN Averages A
 	ON L.DriverEntryID = A.DriverEntryID
 LEFT OUTER JOIN LapEvents LE
 	ON L.LapID = LE.LapID
 	AND LE.LapEventType = 'pitted'
+), 
+Islands AS (
+SELECT * 
+	, LapRanking - GroupRanking AS IslandID
+FROM 
+Rankings
+WHERE LapTimeLoss IS NOT NULL
+), 
+IslandRanks AS (
+	SELECT * 
+	, DENSE_RANK() OVER (PARTITION BY DriverEntryID ORDER BY IslandID) AS PitInstanceInSession
+	FROM Islands
+)
+
+SELECT 
+	L.*
+	, I.LapTimeLoss
+	, I.PitInstanceInSession
+FROM Laps L
+INNER JOIN IslandRanks I
+	ON I.LapID = L.LapID
+GO
 
 DROP VIEW IF EXISTS vw_EnhancedEventDetails
 GO 
@@ -631,4 +672,40 @@ FROM Events EV
 		ON EV.LayoutID = La.LayoutID
 	INNER JOIN Locations LO 
 		ON LO.LocationID = LA.LocationID
-	
+GO
+
+DROP VIEW IF EXISTS vw_EnhancedSessionDetails
+GO 
+
+CREATE VIEW vw_EnhancedSessionDetails
+AS
+
+SELECT 
+	EV.*
+	, S.SessionID
+	, S.SessioniRacingID
+	, S.SessionType
+	, S.SessionName
+	, EV.SeasonName + ' - ' +
+		EV.Description + ' - ' +
+		LO.LocationName + ' - ' +
+		CASE WHEN LA.LayoutName <> 'N/A' THEN LA.LayoutName + ' - ' ELSE '' END +
+		FORMAT(EV.Date, 'dd MMMM yyyy') + ' - ' + 
+		CAST(EV.EventID	 AS NVARCHAR)
+		 AS EventFilterValue
+	, EV.SeasonName + ' - ' +
+		EV.Description + ' - ' +
+		LO.LocationName + ' - ' +
+		CASE WHEN LA.LayoutName <> 'N/A' THEN LA.LayoutName + ' - ' ELSE '' END +
+		S.SessionName + ' - ' + 
+		FORMAT(EV.Date, 'dd MMMM yyyy') + ' - ' + 
+		CAST(EV.EventID	 AS NVARCHAR)
+		 AS SessionFilterValue
+FROM Events EV
+	INNER JOIN Layouts LA
+		ON EV.LayoutID = La.LayoutID
+	INNER JOIN Locations LO 
+		ON LO.LocationID = LA.LocationID
+	INNER JOIN Sessions S
+		ON S.EventID = EV.EventID
+GO
