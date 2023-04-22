@@ -62,7 +62,10 @@ def runQuery(url, includeCookie = False, params={}):
     If the result contains a link attribute, this method returns the data found at this link
     Otherwise returns text value of initial query
     """
-    print (f"Querying API: {url} \nwith parameters: {params}")
+    global apiCallCount 
+    apiCallCount += 1
+    print (f"API Call {apiCallCount} Query: {url} \nwith parameters: {params}")
+
 
     if includeCookie:
         cookie = getCookie()
@@ -92,16 +95,26 @@ def getSessionData(sessionID):
     data = runQuery(IR_SESSION_URL, True, session_params)
     return json.loads(data)
 
-def getDriverSessionList(sessionData):
-    """Takes in session data and returns list of DriverID~SimSessionID~SessionName~TeamID"""    
+class DriverSession:
+    def __init__(self, driverID, simSessionID, simSessionName, teamID):
+        self.driverID = driverID
+        self.simSessionID = simSessionID
+        self.simSessionName = simSessionName
+        self.teamID = teamID
+
+def getDriverSessionList(session_data):
+    """Takes in session data and returns list of DriverSession objects.
+    DriverID~SimSessionID~SessionName~TeamID"""    
     driverSessions = [] 
     for i in session_data["session_results"]:
         for j in i["results"]:
             if 'team_id' in j:
                 for k in j['driver_results']:
-                    driverSessions.append(f"{k['cust_id']}~{i['simsession_number']}~{i['simsession_name']}~{j['team_id']}")
+                    driverSession = DriverSession(k['cust_id'], i['simsession_number'], i['simsession_name'], j['team_id'])
+                    driverSessions.append(driverSession)
             else:    
-                driverSessions.append(f"{j['cust_id']}~{i['simsession_number']}~{i['simsession_name']}~0")
+                driverSession = DriverSession(j['cust_id'], i['simsession_number'], i['simsession_name'], 0)
+                driverSessions.append(driverSession)
     return driverSessions
 
 def getLapData(session_id, driver_id, simsession_no, team_id):
@@ -200,7 +213,7 @@ def processSessionLevelData(session_data):
                             session_data['subsession_id'],
                             session_name,
                             session_data['start_time'],
-                            session_data['season_name'] == "Hosted iRacing", # TODO: Find a way to determine hosted vs others
+                            session_data['season_name'] == "Hosted iRacing", 
                             session_data['official_session'],
                             session_data['weather']['simulated_start_utc_time'],
                             session_data['weather']['simulated_start_utc_offset'],
@@ -245,6 +258,8 @@ class Session:
         self.simsession_no = simsession_no
         self.session_type = session_type
         self.session_name = session_name
+
+
 
 def processSessionDriverLevelData(session_data):
     """
@@ -388,14 +403,14 @@ def processLapLevelData(session_data):
     lap_data = []
     stint_data = []
     for i in driver_session_list:
-        laps = getLapData(session_data['subsession_id'], i.split("~")[0], i.split("~")[1], i.split('~')[3])
+        laps = getLapData(session_data['subsession_id'], i.driverID, i.simSessionID, i.teamID)
         for j in laps:
             lap = Lap(j['lap_time']/10000, j['lap_number'], j['session_time']/10000, [])
             for k in j['lap_events']:
                 lap.lap_events.append(k)
             if lap not in lap_data:
                 lap_data.append(lap)
-        stint = Stint(i.split("~")[0], i.split("~")[3], session_data['subsession_id'],i.split("~")[1],i.split("~")[2],lap_data)
+        stint = Stint(i.driverID, i.teamID, session_data['subsession_id'], i.simSessionID, i.simSessionName, lap_data)
         if not stint in stint_data:
             stint_data.append(stint)
             lap_data = []
@@ -406,7 +421,7 @@ def processLapLevelData(session_data):
 def addLapDetailsToDB(stint_data):
     count = 0
     for i in stint_data:
-        if i.entryiRacingID == "0":
+        if i.entryiRacingID == 0:
             i.entryiRacingID = i.driverID
         for j in i.laps:
             count += 1
@@ -439,27 +454,16 @@ def addLapDetailsToDB(stint_data):
     CURSOR.commit()
 
 if __name__ == "__main__":
+    global apiCallCount 
+    apiCallCount = 0
     session_id = input("Please enter comma separated list of session ids: ")
     for i in session_id.split(","):
         session_data = getSessionData(i.strip())
         
         processSessionLevelData(session_data)
         processSessionDriverLevelData(session_data)
-        processLapLevelData(session_data)
+        processLapLevelData(session_data)     
 
-    #TODO: 
-    # Confirm that heat racing is handled correctly and that separate sessions are being created
-    # Sort out stints and confirm all laps are being stored
-    # Determine if LapInStint is going to be viable, and write logic for it if so        
-
-    print ("Script completed")
-    #print (json.dumps(session_data)) 
-
-
-    #driver_session_list = getDriverSessionList(session_data)  
-    # Get individual lap data for each driver and session
-    #     j = i.split("~")
-    #     print(getLapData(session_id, j[0], j[1]))
-        
+        print (f"All data gathering complete and data stored in database\nTotal API Calls: {apiCallCount}")   
 
     exit()
