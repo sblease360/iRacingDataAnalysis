@@ -1,0 +1,13 @@
+CarID,CariRacingID,ClassID,CarName
+1,143,1,Porsche 911 GT3 Cup (992)
+2,150,2,Aston Martin Vantage GT4
+3,135,2,McLaren 570S GT4
+4,157,2,Mercedes-AMG GT4
+5,119,2,Porsche 718 Cayman GT4 Clubsport MR
+6,153,3,Hyundai Veloster N TC
+7,112,3,Audi RS 3 LMS
+8,147,3,Honda Civic Type R
+9,146,4,Hyundai Elantra N TC
+10,112,4,Audi RS 3 LMS
+11,153,4,Hyundai Veloster N TC
+12,147,4,Honda Civic Type R

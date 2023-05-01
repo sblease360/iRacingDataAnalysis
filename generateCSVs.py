@@ -60,6 +60,45 @@ with open(filename, 'w', newline='') as csvfile:
     csvwriter.writerow([i[0] for i in CURSOR.description])
     csvwriter.writerows(results)
 
+CURSOR.execute("SELECT * FROM DriverSessionEntries")
+results = CURSOR.fetchall()
+
+filename = "data/DriverEntryDetails.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+CURSOR.execute("SELECT * FROM Drivers")
+results = CURSOR.fetchall()
+
+filename = "data/Drivers.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+CURSOR.execute("SELECT * FROM Cars")
+results = CURSOR.fetchall()
+
+filename = "data/Cars.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+CURSOR.execute("SELECT * FROM Classes")
+results = CURSOR.fetchall()
+
+filename = "data/Classes.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
 
 CURSOR.close()
 CNXN.close()

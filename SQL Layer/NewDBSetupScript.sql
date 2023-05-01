@@ -502,6 +502,7 @@ SELECT
 	, ELD.LeaderLapStartTime
 	, CASE WHEN ELD.BestLapOnLap IS NOT NULL AND LA.LapTime > 1 THEN (100 * LA.Laptime / ELD.BestLapOnLap) - 100 ELSE NULL END AS PercentageGapToBestLap
 	, LA.LapStartTime - ELD.LeaderLapStartTime AS GapToClassLeader
+	, CASE WHEN LA.LapTime < (1.07 * ELD.DriverBestLap) THEN 1 ELSE 0 END AS Within107
 FROM (
 			SELECT 
 				LapID
@@ -548,7 +549,7 @@ FROM (
 				LA.LapID
 				, RANK() OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS PositionInClass
 				, BL.BestLapOnLap
-				--, MIN(LA.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
+				, BL.DriverBestLap
 				, MIN(La.LapStartTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS LeaderLapStartTime
 			FROM Laps LA
 				INNER JOIN DriverSessionEntries DE
@@ -564,6 +565,7 @@ FROM (
 				LEFT OUTER JOIN (
 					SELECT LA.LapID
 					, MIN(La.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
+					, MIN(La.LapTime) OVER (PARTITION BY LA.DriverEntryID ORDER BY LA.LapStartTime) AS DriverBestLap
 					FROM Laps LA
 					INNER JOIN DriverSessionEntries DE
 						ON LA.DriverEntryID = DE.DriverEntryID
@@ -578,8 +580,7 @@ FROM (
 					WHERE LA.LapTime > 1
 				) BL ON LA.LapID = BL.LapID
 	) ELD ON LA.LapID = ELD.LapID
-	
-GO
+GO	
 
 DROP VIEW IF EXISTS vw_PitTimeLoss
 GO 
@@ -612,11 +613,14 @@ Averages
 AS 
 (
 	SELECT 
-		SessionEntryID,
-		AVG(Pivoted.LapTime) AS MeanCleanLapTime
+		Pivoted.SessionEntryID
+		, AVG(Pivoted.LapTime) AS MeanCleanLapTime
+		, MIN(Pivoted.LapTime) AS BestLap
+		, AVG(Pivoted.LapTime) - MIN(Pivoted.LapTime) AS Gap
 	FROM Pivoted 
-	WHERE ValidLapForAverages = 1
-	GROUP BY SessionEntryID
+	LEFT OUTER JOIN (SELECT Pivoted.SessionEntryID, MIN(Pivoted.LapTime) AS BestLap FROM Pivoted WHERE Pivoted.ValidLapForAverages = 1 GROUP BY Pivoted.SessionEntryID) P2 on Pivoted.SessionEntryID = P2.SessionEntryID -- This is to exclude any unrepresentative laps, such as those behind a safety car, used in the WHERE clause immediated below
+	WHERE ValidLapForAverages = 1 AND Pivoted.LapTime < 1.07 * P2.BestLap
+	GROUP BY Pivoted.SessionEntryID
 ),
 Rankings AS (
 SELECT 
@@ -656,6 +660,7 @@ FROM Laps L
 INNER JOIN IslandRanks I
 	ON I.LapID = L.LapID
 GO
+
 
 
 DROP VIEW IF EXISTS vw_EnhancedEventDetails
