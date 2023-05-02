@@ -1,13 +1,26 @@
 CarID,CariRacingID,ClassID,CarName
 1,143,1,Porsche 911 GT3 Cup (992)
-2,150,2,Aston Martin Vantage GT4
+2,157,2,Mercedes-AMG GT4
 3,135,2,McLaren 570S GT4
-4,157,2,Mercedes-AMG GT4
+4,150,2,Aston Martin Vantage GT4
 5,119,2,Porsche 718 Cayman GT4 Clubsport MR
 6,153,3,Hyundai Veloster N TC
-7,112,3,Audi RS 3 LMS
-8,147,3,Honda Civic Type R
-9,146,4,Hyundai Elantra N TC
-10,112,4,Audi RS 3 LMS
-11,153,4,Hyundai Veloster N TC
-12,147,4,Honda Civic Type R
+7,147,3,Honda Civic Type R
+8,112,3,Audi RS 3 LMS
+9,128,4,Dallara P217
+10,137,5,Porsche 911 GT3 R
+11,156,5,Mercedes-AMG GT3 2020
+12,73,5,Audi R8 LMS GT3
+13,144,5,Ferrari 488 GT3 Evo 2020
+14,132,5,BMW M4 GT3
+15,133,5,Lamborghini Huracán GT3 EVO
+16,112,6,Audi RS 3 LMS
+17,146,6,Hyundai Elantra N TC
+18,147,6,Honda Civic Type R
+19,153,6,Hyundai Veloster N TC
+20,159,7,BMW M Hybrid V8
+21,118,8,Supercars Ford Mustang GT
+22,117,8,Supercars Holden ZB Commodore
+23,143,9,Porsche 911 GT3 Cup (992)
+24,117,10,Supercars Holden ZB Commodore
+25,118,10,Supercars Ford Mustang GT

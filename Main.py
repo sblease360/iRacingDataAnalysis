@@ -163,7 +163,7 @@ def sendTrackDetailsToDB(location, layout, layout_length, corners_per_lap):
 
 def sendEventDetailsToDB(track_name, config_name, subsession_id, 
                         session_name, start_datetime_str, hosted, 
-                        official, sim_start_utc, utc_offset, temp, humidity, season_name, year, quarter, sof):
+                        official, sim_start_utc, utc_offset, temp, humidity, season_name, league_season_name, year, quarter, sof):
     sim_start = parser.parse(sim_start_utc) + datetime.timedelta(0,60 * utc_offset)
 
     if quarter is None:
@@ -186,6 +186,7 @@ def sendEventDetailsToDB(track_name, config_name, subsession_id,
                     @Temp = {temp},
                     @Humidity = {humidity},
                     @SeasonName = '{season_name}',
+                    @LeagueSeasonName = '{league_season_name}',
                     @Year = {year},
                     @Quarter = {quarter},
                     @SoF = {sof}
@@ -203,6 +204,11 @@ def processSessionLevelData(session_data):
         session_name = session_data['session_name']
     else:
         session_name = session_data['season_name']
+
+    if 'league_season_name' in session_data:
+        league_season_name = session_data['league_season_name']
+    else:
+        league_season_name = None
 
     if session_data['season_name'] == "Hosted iRacing":
         year = datetime.datetime.now().year
@@ -225,6 +231,7 @@ def processSessionLevelData(session_data):
                             session_data['weather']['temp_value'],
                             session_data['weather']['rel_humidity'],
                             session_data['season_name'],
+                            league_season_name,
                             year,
                             quarter,
                             sof
@@ -245,7 +252,7 @@ class Car:
         self.className = className
 
 class Entry:
-    def __init__(self, eventID, sessionID, iRacingID, carID, carClassID, entryName, isTeam, drivers, incidents, finishPos):
+    def __init__(self, eventID, sessionID, iRacingID, carID, carClassID, entryName, isTeam, drivers, incidents, finishPos, finishPosInClass, startPos, startPosInClass, reasonOut, interval, classInterval, champPoints):
         self.eventID = eventID
         self.sessionID = sessionID
         self.iRacingID = iRacingID
@@ -256,6 +263,14 @@ class Entry:
         self.drivers = drivers
         self.incidents = incidents
         self.finishPos = finishPos + 1
+        self.finishPosInClass = finishPosInClass + 1
+        self.startingPos = startPos + 1
+        self.startingPosInClass = startPosInClass + 1
+        self.reasonOut = reasonOut
+        self.interval = interval
+        self.classInterval = classInterval
+        self.champPoints = champPoints
+
 
 class Session:
     def __init__(self, eventID, simsession_no, session_name, session_type):
@@ -263,8 +278,6 @@ class Session:
         self.simsession_no = simsession_no
         self.session_type = session_type
         self.session_name = session_name
-
-
 
 def processSessionDriverLevelData(session_data):
     """
@@ -284,7 +297,7 @@ def processSessionDriverLevelData(session_data):
         session = Session(eventID, i['simsession_number'],i['simsession_name'], i['simsession_type_name'])
         for j in i['results']:
             car = Car(j['car_id'], j['car_name'], j['car_class_id'], j['car_class_name'])
-            entry = Entry(eventID, i['simsession_number'],0, j['car_id'], j['car_class_id'], j['display_name'], False, [], j['incidents'], j['finish_position_in_class'])
+            entry = Entry(eventID, i['simsession_number'],0, j['car_id'], j['car_class_id'], j['display_name'], False, [], j['incidents'], j['finish_position'], j['finish_position_in_class'], j['starting_position'], j['starting_position_in_class'], j['reason_out'], j['interval']/10000, j['class_interval']/10000, j['champ_points'])
             if 'team_id' in j:
                 # Team entry specific settings
                 entry.isTeam = True
@@ -335,7 +348,6 @@ def addSessionDetailsToDB(sessions):
 def addEntryDetailsToDB(entries):
     for i in entries:
         for j in i.drivers:
-
             CURSOR.execute (f"""
                         EXEC sp_CreateSessionEntry
                         @EventID = {i.eventID}, 
@@ -345,7 +357,14 @@ def addEntryDetailsToDB(entries):
                         @CarClassiRacingID = {i.carClassID},
                         @isTeam = {i.isTeam},
                         @EntryName = '{i.entryName.replace("'"," ")}',
-                        @FinishPosInClass = {i.finishPos}
+                        @FinishPos = {i.finishPos},
+                        @FinishPosInClass = {i.finishPosInClass},
+                        @StartingPos = {i.startingPos},
+                        @StartingPosInClass = {i.startingPosInClass},
+                        @ReasonOut = {i.reasonOut},
+                        @Interval = {i.interval},
+                        @ClassInterval = {i.classInterval},
+                        @ChampPoints = {i.champPoints}
                     """)
             CURSOR.commit()
             CURSOR.execute(f"""

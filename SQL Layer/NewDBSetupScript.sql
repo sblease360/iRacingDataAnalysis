@@ -42,6 +42,7 @@ CREATE TABLE Events (
   Temp DECIMAL(5,2),
   Humidity DECIMAL(5,2),
   SeasonName VARCHAR(100),
+  LeagueSeasonName VARCHAR(100),
   Year INT,
   Quarter INT,
   SoF INT,
@@ -83,7 +84,14 @@ CREATE TABLE SessionEntries (
   EntryName VARCHAR(100),
   IsTeam BIT,
   CarID INT NOT NULL,
+  FinishPos INT NOT NULL,
   FinishPosInClass INT NOT NULL,
+  StartingPos INT NOT NULL,
+  StartingPosInClass INT NOT NULL, 
+  ReasonOut VARCHAR(50),
+  Interval FLOAT NOT NULL,
+  ClassInterval FLOAT NOT NULL,
+  ChampPoints INT NOT NULL,
   FOREIGN KEY (SessionID) REFERENCES Sessions(SessionID),
   FOREIGN KEY (CarID) REFERENCES Cars(CarID),
   CONSTRAINT UC_SessionIDiRacingID UNIQUE(SessionID, SessionEntryiRacingID)
@@ -112,8 +120,8 @@ CREATE TABLE DriverSessionEntries (
 CREATE TABLE Laps (
   LapID INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
   DriverEntryID INT NOT NULL,
-  LapTime FLOAT,
-  LapStartTime FLOAT,
+  LapTime FLOAT NOT NULL,
+  LapStartTime FLOAT NOT NULL,
   LapInSession INT NOT NULL,
   FOREIGN KEY (DriverEntryID) REFERENCES DriverSessionEntries(DriverEntryID),
   CONSTRAINT UC_LapInSessionDriverEntryID UNIQUE(DriverEntryID, LapInSession)
@@ -225,6 +233,7 @@ CREATE PROCEDURE sp_CreateEvent
 	@Temp DECIMAL (5,2),
 	@Humidity DECIMAL (5,2),
 	@SeasonName NVARCHAR(100),
+	@LeagueSeasonName NVARCHAR(100),
 	@Year INT,
 	@Quarter INT,
 	@SoF INT
@@ -259,8 +268,8 @@ AS
         RETURN;
 	END
 
-	INSERT INTO Events (EventID, Description, Date, Hosted, Official, StartTime, InSimDate, InSimTime, LayoutID, Temp, Humidity, SeasonName, Year, Quarter, SoF)
-	VALUES (@EventID, @Description, @EventDate, @Hosted, @Official, @EventStartTime, @InSimDate, @InSimStartTime, @LayoutID, @Temp, @Humidity, @SeasonName, @Year, @Quarter, @Sof)
+	INSERT INTO Events (EventID, Description, Date, Hosted, Official, StartTime, InSimDate, InSimTime, LayoutID, Temp, Humidity, SeasonName, LeagueSeasonName, Year, Quarter, SoF)
+	VALUES (@EventID, @Description, @EventDate, @Hosted, @Official, @EventStartTime, @InSimDate, @InSimStartTime, @LayoutID, @Temp, @Humidity, @SeasonName, @LeagueSeasonName, @Year, @Quarter, @Sof)
 GO
 
 DROP PROCEDURE IF EXISTS sp_CreateSession
@@ -304,7 +313,14 @@ CREATE PROCEDURE sp_CreateSessionEntry
 	@CarClassiRacingID INT,
 	@IsTeam BIT,
 	@EntryName NVARCHAR(100),
-	@FinishPosInClass INT
+	@FinishPos INT,
+	@FinishPosInClass INT,
+	@StartingPos INT,
+	@StartingPosInClass INT,
+	@ReasonOut VARCHAR(100),
+	@Interval FLOAT,
+	@ClassInterval FLOAT,
+	@ChampPoints INT
 AS
 	--Check Event Exists
 	IF NOT EXISTS (SELECT * FROM Events WHERE EventID = @EventID)
@@ -357,8 +373,8 @@ AS
         RETURN;
 	END
 
-	INSERT INTO SessionEntries (SessionID, EntryName, IsTeam, SessionEntryiRacingID, CarID, FinishPosInClass)
-	VALUES (@SessionID, @EntryName, @IsTeam, @SessionEntryiRacingID, @CarID, @FinishPosInClass)
+	INSERT INTO SessionEntries (SessionID, EntryName, IsTeam, SessionEntryiRacingID, CarID, FinishPos, FinishPosInClass, StartingPos, StartingPosInClass, ReasonOut, Interval, ClassInterval, ChampPoints)
+	VALUES (@SessionID, @EntryName, @IsTeam, @SessionEntryiRacingID, @CarID, @FinishPos, @FinishPosInClass, @StartingPos, @StartingPosInClass, @ReasonOut, @Interval, @ClassInterval, @ChampPoints)
 GO
 
 
@@ -661,8 +677,6 @@ INNER JOIN IslandRanks I
 	ON I.LapID = L.LapID
 GO
 
-
-
 DROP VIEW IF EXISTS vw_EnhancedEventDetails
 GO 
 
@@ -677,7 +691,22 @@ SELECT
 	FORMAT(EV.Date, 'dd MMMM yyyy') + ' - ' + 
 	CAST(EV.EventID	 AS NVARCHAR)
 	 AS EventFilterValue
-	, EV.*
+	, EV.EventID
+	, EV.Description
+	, EV.Date
+	, EV.Hosted
+	, EV.Official
+	, EV.StartTime
+	, EV.InSimDate
+	, EV.InSimTime
+	, EV.LayoutID
+	, EV.Temp
+	, EV.Humidity
+	, EV.SeasonName
+	, EV.Year
+	, EV.Quarter
+	, EV.SoF
+	, EV.LeagueSeasonName
 FROM Events EV
 	INNER JOIN Layouts LA
 		ON EV.LayoutID = La.LayoutID
@@ -686,7 +715,7 @@ FROM Events EV
 GO
 
 
-DROP VIEW IF EXISTS vw_EnhancedSessionDetails --Old name of this vew
+DROP VIEW IF EXISTS vw_EnhancedSessionDetails --Old name of this view
 DROP VIEW IF EXISTS vw_EventSessionClassFilterDetails
 GO 
 
@@ -694,7 +723,21 @@ CREATE VIEW vw_EventSessionClassFilterDetails
 AS
 
 SELECT DISTINCT
-	EV.*
+	EV.EventID
+	, EV.Description
+	, EV.Date
+	, EV.Hosted
+	, EV.Official
+	, EV.StartTime
+	, EV.InSimDate
+	, EV.InSimTime
+	, EV.LayoutID
+	, EV.Temp
+	, EV.Humidity
+	, EV.SeasonName
+	, EV.Year
+	, EV.Quarter
+	, EV.SoF
 	, S.SessionID
 	, S.SessioniRacingID
 	, S.SessionType
@@ -725,6 +768,7 @@ SELECT DISTINCT
 		FORMAT(EV.Date, 'dd MMMM yyyy') + ' - ' + 
 		CAST(EV.EventID	 AS NVARCHAR)
 		 AS SessionClassFilterValue
+	, EV.LeagueSeasonName
 FROM Events EV
 	INNER JOIN Layouts LA
 		ON EV.LayoutID = La.LayoutID
@@ -740,6 +784,7 @@ FROM Events EV
 		C.ClassID = CC.ClassID
 GO
 
+
 DROP VIEW IF EXISTS vw_EnhancedSessionEntryDetails
 GO 
 
@@ -747,18 +792,27 @@ CREATE VIEW vw_EnhancedSessionEntryDetails
 AS
 
 SELECT 
-	SE.*
+	SE.SessionEntryID
+	, SE.SessionID
+	, SE.SessionEntryiRacingID
+	, SE.EntryName
+	, SE.IsTeam
+	, SE.CarID
+	, SE.FinishPosInClass
 	, RANK() OVER (PARTITION BY SE.SessionID, C.ClassID ORDER BY L1.LapStartTime) AS StartPositionInClass
 	, C.ClassID
 	, DSE.IncidentCount AS EntryIncidents	
 	, CASE 
-		WHEN L2.LapsCompleted = MAX(L2.LapsCompleted) OVER (PARTITION BY SE.SessionID, C.ClassID) THEN 
-			CASE WHEN L2.FinalLapFinishTime - MIN(L2.FinalLapFinishTime) OVER (PARTITION BY SE.SessionID, C.ClassID, L2.LapsCompleted) = 0 THEN '-' 
-			ELSE CAST(L2.FinalLapFinishTime - MIN(L2.FinalLapFinishTime) OVER (PARTITION BY SE.SessionID, C.ClassID, L2.LapsCompleted) AS NVARCHAR) END
+		WHEN SE.ClassInterval > 0 THEN CAST(SE.ClassInterval AS NVARCHAR)
 		ELSE CAST(MAX(L2.LapsCompleted) OVER (PARTITION BY SE.SessionID, C.ClassID) - L2.LapsCompleted AS NVARCHAR) + ' Laps'
-		END AS GapToLeader
+	END AS GapToLeader
 	, L2.LapsCompleted
-	, L2.FinalLapFinishTime
+	, L2.FinalLapFinishTime --DO NOT USE, if a slowdown is taken on the final lap this is incorrect
+	, SE.FinishPos AS OverallFinishPos
+	, SE.StartingPos AS OverallStartPos
+	, SE.StartingPosInClass AS StartPos
+	, SE.ReasonOut
+	, SE.ChampPoints
 FROM SessionEntries SE
 	INNER JOIN DriverSessionEntries DSE ON
 		SE.SessionEntryID = DSE.SessionEntryID
@@ -771,7 +825,7 @@ FROM SessionEntries SE
 		(SELECT 
 			DSE.SessionEntryID
 			, MAX(L.LapInSession) AS LapsCompleted 
-			, MAX(L.LapStartTime + L.LapTime) AS FinalLapFinishTime
+			, MAX(L.LapStartTime + L.LapTime) AS FinalLapFinishTime --Left in for Tableau Public compatability, but should not be used
 		FROM Laps L
 			INNER JOIN DriverSessionEntries DSE ON L.DriverEntryID = DSE.DriverEntryID
 		GROUP BY DSE.SessionEntryID) L2 ON
