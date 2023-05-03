@@ -14,13 +14,13 @@ CarID,CariRacingID,ClassID,CarName
 13,144,5,Ferrari 488 GT3 Evo 2020
 14,132,5,BMW M4 GT3
 15,133,5,Lamborghini Huracán GT3 EVO
-16,112,6,Audi RS 3 LMS
-17,146,6,Hyundai Elantra N TC
-18,147,6,Honda Civic Type R
-19,153,6,Hyundai Veloster N TC
-20,159,7,BMW M Hybrid V8
-21,118,8,Supercars Ford Mustang GT
-22,117,8,Supercars Holden ZB Commodore
-23,143,9,Porsche 911 GT3 Cup (992)
-24,117,10,Supercars Holden ZB Commodore
-25,118,10,Supercars Ford Mustang GT
+16,159,6,BMW M Hybrid V8
+17,118,7,Supercars Ford Mustang GT
+18,117,7,Supercars Holden ZB Commodore
+19,143,8,Porsche 911 GT3 Cup (992)
+20,117,9,Supercars Holden ZB Commodore
+21,118,9,Supercars Ford Mustang GT
+22,153,10,Hyundai Veloster N TC
+23,147,10,Honda Civic Type R
+24,146,10,Hyundai Elantra N TC
+25,112,10,Audi RS 3 LMS

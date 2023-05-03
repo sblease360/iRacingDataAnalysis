@@ -10,10 +10,12 @@ CONN_STR = (
 CNXN = pyodbc.connect(CONN_STR)
 CURSOR = CNXN.cursor()
 
+PATH = "data/"
+
 CURSOR.execute("SELECT * FROM vw_EnhancedEventDetails")
 results = CURSOR.fetchall()
 
-filename = "data/eventDetails.csv"
+filename = PATH + "eventDetails.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -23,7 +25,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM vw_EnhancedLapData")
 results = CURSOR.fetchall()
 
-filename = "data/lapDetails.csv"
+filename = PATH + "lapDetails.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -33,7 +35,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM vw_EnhancedSessionEntryDetails")
 results = CURSOR.fetchall()
 
-filename = "data/sessionEntryDetails.csv"
+filename = PATH + "sessionEntryDetails.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -43,7 +45,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM vw_EventSessionClassFilterDetails")
 results = CURSOR.fetchall()
 
-filename = "data/eventSessionClassFilterDetails.csv"
+filename = PATH + "eventSessionClassFilterDetails.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -53,7 +55,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM vw_PitTimeLoss")
 results = CURSOR.fetchall()
 
-filename = "data/pitTimeLoss.csv"
+filename = PATH + "pitTimeLoss.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -63,7 +65,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM DriverSessionEntries")
 results = CURSOR.fetchall()
 
-filename = "data/DriverEntryDetails.csv"
+filename = PATH + "DriverEntryDetails.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -73,7 +75,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM Drivers")
 results = CURSOR.fetchall()
 
-filename = "data/Drivers.csv"
+filename = PATH + "Drivers.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -83,7 +85,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM Cars")
 results = CURSOR.fetchall()
 
-filename = "data/Cars.csv"
+filename = PATH + "/Cars.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
@@ -93,7 +95,7 @@ with open(filename, 'w', newline='') as csvfile:
 CURSOR.execute("SELECT * FROM Classes")
 results = CURSOR.fetchall()
 
-filename = "data/Classes.csv"
+filename = PATH + "/Classes.csv"
 
 with open(filename, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile)
