@@ -4,6 +4,7 @@
 --DROP TABLE IF EXISTS Laps;
 --DROP TABLE IF EXISTS DriverSessionEntries;
 --DROP TABLE IF EXISTS SessionEntries;
+--DROP TABLE IF EXISTS Cautions;
 --DROP TABLE IF EXISTS Sessions;
 --DROP TABLE IF EXISTS Drivers;
 --DROP TABLE IF EXISTS Events;
@@ -97,6 +98,15 @@
 --  CONSTRAINT UC_SessionIDiRacingID UNIQUE(SessionID, SessionEntryiRacingID)
 --);
 
+--CREATE TABLE Cautions (
+--	CautionID INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+--	SessionID INT NOT NULL,
+--	StartLap INT NOT NULL,
+--	EndLap INT NOT NULL,
+--	StartTime FLOAT NOT NULL,
+--	EndTime FLOAT NOT NULL,
+--	FOREIGN KEY (SessionID) REFERENCES Sessions(SessionID)
+--);
 
 --CREATE TABLE Drivers (
 --  DriverID INT NOT NULL PRIMARY KEY,
@@ -121,7 +131,7 @@
 --  LapID INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
 --  DriverEntryID INT NOT NULL,
 --  LapTime FLOAT NOT NULL,
---  LapStartTime FLOAT NOT NULL,
+--  LapEndTime FLOAT NOT NULL,
 --  LapInSession INT NOT NULL,
 --  FOREIGN KEY (DriverEntryID) REFERENCES DriverSessionEntries(DriverEntryID),
 --  CONSTRAINT UC_LapInSessionDriverEntryID UNIQUE(DriverEntryID, LapInSession)
@@ -270,6 +280,34 @@
 
 --	INSERT INTO Events (EventID, Description, Date, Hosted, Official, StartTime, InSimDate, InSimTime, LayoutID, Temp, Humidity, SeasonName, LeagueSeasonName, Year, Quarter, SoF)
 --	VALUES (@EventID, @Description, @EventDate, @Hosted, @Official, @EventStartTime, @InSimDate, @InSimStartTime, @LayoutID, @Temp, @Humidity, @SeasonName, @LeagueSeasonName, @Year, @Quarter, @Sof)
+--GO
+
+--DROP PROCEDURE IF EXISTS sp_CreateCaution
+--GO 
+
+--CREATE PROCEDURE sp_CreateCaution
+--	@EventID INT,
+--	@SimSessionNo INT,
+--	@StartLap INT,
+--	@EndLap INT,
+--	@StartTime FLOAT,
+--	@EndTime FLOAT
+--AS
+--	DECLARE @SessionID INT
+
+--	IF NOT EXISTS (SELECT * FROM Events E INNER JOIN Sessions SE ON SE.EventID = E.EventID WHERE E.EventID = @EventID AND SE.SessioniRacingID = @SimSessionNo)
+--	BEGIN
+--		RAISERROR('Error: Event or Session Details not in DB, Event cannot be created', 16, 1);
+--        RETURN;
+--	END
+--	ELSE
+--	BEGIN
+--		SELECT @SessionID = SE.SessionID FROM Events E INNER JOIN Sessions SE ON SE.EventID = E.EventID WHERE E.EventID = @EventID AND SE.SessioniRacingID = @SimSessionNo
+--	END
+
+--	INSERT INTO Cautions (SessionID, StartLap, EndLap, StartTime, EndTime)
+--	VALUES (@SessionID, @StartLap, @EndLap, @StartTime, @EndTime)
+
 --GO
 
 --DROP PROCEDURE IF EXISTS sp_CreateSession
@@ -438,7 +476,7 @@
 --	@SessioniRacingID INT,
 --	@DriverID INT,
 --	@LapTime FLOAT,
---	@LapStartTime FLOAT,
+--	@LapEndTime FLOAT,
 --	@LapInSession INT, 
 --	@LapEventType NVARCHAR(50)
 --AS
@@ -488,8 +526,8 @@
 --	DECLARE @LapID INT
 --	IF NOT EXISTS (SELECT * FROM Laps WHERE LapInSession = @LapInSession AND DriverEntryID = @DriverEntryID)
 --	BEGIN
---		INSERT INTO Laps(DriverEntryID, LapTime, LapStartTime, LapInSession)
---		VALUES (@DriverEntryID, @LapTime, @LapStartTime, @LapInSession)
+--		INSERT INTO Laps(DriverEntryID, LapTime, LapEndTime, LapInSession)
+--		VALUES (@DriverEntryID, @LapTime, @LapEndTime, @LapInSession)
 --		SET @LapID = SCOPE_IDENTITY()
 --	END
 --	ELSE
@@ -515,16 +553,16 @@ SELECT
 	LA.*
 	, ELD.PositionInClass
 	, ELD.BestLapOnLap
-	, ELD.LeaderLapStartTime
+	, ELD.LeaderLapEndTime
 	, CASE WHEN ELD.BestLapOnLap IS NOT NULL AND LA.LapTime > 1 THEN (100 * LA.Laptime / ELD.BestLapOnLap) - 100 ELSE NULL END AS PercentageGapToBestLap
-	, LA.LapStartTime - ELD.LeaderLapStartTime AS GapToClassLeader
+	, LA.LapEndTime - ELD.LeaderLapEndTime AS GapToClassLeader
 	, CASE WHEN LA.LapTime < (1.07 * ELD.DriverBestLap) THEN 1 ELSE 0 END AS Within107
 FROM (
 			SELECT 
 				LapID
 				, DriverEntryID
 				, LapTime
-				, LapStartTime
+				, LapEndTime
 				, LapInSession
 				, CASE WHEN ([black flag] + [car contact] + [car reset] + [contact] + [discontinuity] + [invalid] + [lost control] + [off track] + [tow]) = 0 THEN 1 ELSE 0 END AS CleanLap
 				, [black flag] AS BlackFlag 
@@ -548,7 +586,7 @@ FROM (
 					+ CASE WHEN [pitted] = 1 THEN ', In Pits' ELSE '' END, 1, 2, '') AS EventCategory
 			FROM 
 			(
-			  SELECT l.LapID, l.DriverentryID, l.LapTime, l.LapStartTime, l.LapInSession, le.LapEventType
+			  SELECT l.LapID, l.DriverentryID, l.LapTime, l.LapEndTime, l.LapInSession, le.LapEventType
 			  FROM Laps l 
 			  LEFT OUTER JOIN LapEvents le ON l.LapID = le.LapID
 			) AS LapEventData
@@ -563,10 +601,10 @@ FROM (
 	LEFT OUTER JOIN (
 			SELECT 
 				LA.LapID
-				, RANK() OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS PositionInClass
+				, RANK() OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapEndTime) AS PositionInClass
 				, BL.BestLapOnLap
 				, BL.DriverBestLap
-				, MIN(La.LapStartTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS LeaderLapStartTime
+				, MIN(La.LapEndTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapEndTime) AS LeaderLapEndTime
 			FROM Laps LA
 				INNER JOIN DriverSessionEntries DE
 					ON LA.DriverEntryID = DE.DriverEntryID
@@ -580,8 +618,8 @@ FROM (
 					ON EE.SessionID = SE.SessionID
 				LEFT OUTER JOIN (
 					SELECT LA.LapID
-					, MIN(La.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapStartTime) AS BestLapOnLap
-					, MIN(La.LapTime) OVER (PARTITION BY LA.DriverEntryID ORDER BY LA.LapStartTime) AS DriverBestLap
+					, MIN(La.LapTime) OVER (PARTITION BY SE.EventID, SE.SessionID, LA.LapInSession, CL.ClassID ORDER BY LA.LapEndTime) AS BestLapOnLap
+					, MIN(La.LapTime) OVER (PARTITION BY LA.DriverEntryID ORDER BY LA.LapEndTime) AS DriverBestLap
 					FROM Laps LA
 					INNER JOIN DriverSessionEntries DE
 						ON LA.DriverEntryID = DE.DriverEntryID
@@ -614,7 +652,7 @@ AS
 		, PivotTable.pitted AS Pitted	
 	FROM 
 	(
-		SELECT l.LapID, DSE.SessionEntryID, l.LapTime, l.LapStartTime, l.LapInSession, le.LapEventType
+		SELECT l.LapID, DSE.SessionEntryID, l.LapTime, l.LapEndTime, l.LapInSession, le.LapEventType
 		FROM Laps l 
 		INNER JOIN DriverSessionEntries DSE ON L.DriverEntryID = DSE.DriverEntryID
 		LEFT OUTER JOIN LapEvents le ON l.LapID = le.LapID
@@ -812,7 +850,7 @@ SELECT
 	, SE.IsTeam
 	, SE.CarID
 	, SE.FinishPosInClass
-	, RANK() OVER (PARTITION BY SE.SessionID, C.ClassID ORDER BY L1.LapStartTime) AS StartPositionInClass
+	, RANK() OVER (PARTITION BY SE.SessionID, C.ClassID ORDER BY L1.LapEndTime) AS StartPositionInClass
 	, C.ClassID
 	, DSE.IncidentCount AS EntryIncidents	
 	, CASE 
@@ -838,7 +876,7 @@ FROM SessionEntries SE
 		(SELECT 
 			DSE.SessionEntryID
 			, MAX(L.LapInSession) AS LapsCompleted 
-			, MAX(L.LapStartTime + L.LapTime) AS FinalLapFinishTime --Left in for Tableau Public compatability, but should not be used
+			, MAX(L.LapEndTime + L.LapTime) AS FinalLapFinishTime --Left in for Tableau Public compatability, but should not be used
 		FROM Laps L
 			INNER JOIN DriverSessionEntries DSE ON L.DriverEntryID = DSE.DriverEntryID
 		GROUP BY DSE.SessionEntryID) L2 ON

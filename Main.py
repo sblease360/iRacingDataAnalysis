@@ -9,6 +9,7 @@ COOKIE_FILE = "irCookieJar.json"
 CRED_FILE = "credentials.json"
 IR_SESSION_URL = "https://members-ng.iracing.com/data/results/get?"
 IR_LAPS_URL = "https://members-ng.iracing.com/data/results/lap_data?"
+IR_EVENTLOG_URL = "https://members-ng.iracing.com/data/results/event_log?"
 
 CONN_STR = (
     r'DRIVER={ODBC Driver 17 for SQL Server};'
@@ -129,8 +130,6 @@ def getLapData(session_id, driver_id, simsession_no, team_id):
         "simsession_number": simsession_no,
         "cust_id": driver_id,
     }
-    if (team_id != 0):
-        params['team_id'] = team_id
     chunk_raw = runQuery(IR_LAPS_URL, True, params)
     chunk_data = json.loads(chunk_raw)
 
@@ -147,6 +146,33 @@ def getLapData(session_id, driver_id, simsession_no, team_id):
         exit()
     except TypeError as e:
         print (f"Error getting lap data: {e}")
+        exit()
+
+def getEventLogData(session_id, simsession_no):
+    """Gets the lap data for a specific driver in a specific session"""
+    params = {
+        "subsession_id": session_id,
+        "simsession_number": simsession_no,
+    }
+    chunk_raw = runQuery(IR_EVENTLOG_URL, True, params)
+    chunk_data = json.loads(chunk_raw)
+
+    try: 
+        data_raw = ''
+        data_json = []
+        if chunk_data['chunk_info'] == None or chunk_data['chunk_info']['chunk_file_names'] == []:
+            #No event_log data available for this sub-session
+            return []
+        for i in chunk_data['chunk_info']['chunk_file_names']:
+            data_raw = runQuery(f"{chunk_data['chunk_info']['base_download_url']}{i}")
+            for j in json.loads(data_raw):
+                data_json.append(j)
+        return data_json
+    except KeyError as e:
+        print (f"Error getting eventlog data: {e}")
+        exit()
+    except TypeError as e:
+        print (f"Error getting eventlog data: {e}")
         exit()
 
 def sendTrackDetailsToDB(location, layout, layout_length, corners_per_lap):
@@ -415,10 +441,10 @@ class Stint:
         self.laps = laps
 
 class Lap:
-    def __init__(self, lap_time, lap_in_session, lap_start_time, lap_events):
+    def __init__(self, lap_time, lap_in_session, lap_end_time, lap_events):
         self.lap_time = lap_time
         self.lap_in_session = lap_in_session
-        self.lap_start_time = lap_start_time
+        self.lap_end_time = lap_end_time
         self.lap_events = lap_events
 
 
@@ -459,7 +485,7 @@ def addLapDetailsToDB(stint_data):
                                 @DriverID = '{i.driverID}', 
                                 @LapTime = '{j.lap_time}', 
                                 @LapInSession = '{j.lap_in_session}', 
-                                @LapStartTime = '{j.lap_start_time}', 
+                                @LapEndTime = '{j.lap_end_time}', 
                                 @LapEventType = '{k}'
                             """)
             else:
@@ -471,10 +497,52 @@ def addLapDetailsToDB(stint_data):
                             @DriverID = '{i.driverID}', 
                             @LapTime = '{j.lap_time}', 
                             @LapInSession = '{j.lap_in_session}', 
-                            @LapStartTime = '{j.lap_start_time}', 
+                            @LapEndTime = '{j.lap_end_time}', 
                             @LapEventType = ''
                     """)
     print ("Adding Laps details to DB")
+    CURSOR.commit()
+
+class CautionEvent:
+    def __init__(self, event_id, simsession_no, start_lap, end_lap, start_time, end_time):
+        self.event_id = event_id
+        self.simsession_no = simsession_no
+        self.start_lap = start_lap
+        self.end_lap = end_lap
+        self.start_time = start_time
+        self.end_time = end_time
+
+
+def processEventLogData(session_data):
+    cautions = []
+    for i in session_data['session_results']:
+        events = getEventLogData(session_data['subsession_id'],i['simsession_number'])
+        for j in events:
+            if j['description'] == "Caution" and 'Caution for' in j['message']:
+                tmpCaution = CautionEvent(session_data['subsession_id'],i['simsession_number'],j['lap_number'],-1,j['session_time']/10000,-1)
+            if j['description'] == "Caution" and j['message'] == "Caution ended.":
+                tmpCaution.end_lap = j['lap_number']
+                tmpCaution.end_time = j['session_time']/10000
+                cautions.append(tmpCaution)
+                del tmpCaution
+        #Did the event end under caution?
+        if 'tmpCaution' in locals():
+            cautions.append(tmpCaution)
+            del tmpCaution
+    addCautionsToDB(cautions)
+
+def addCautionsToDB(cautions):
+    for i in cautions:
+        CURSOR.execute (f"""
+                                EXEC sp_CreateCaution
+                                @EventID = {i.event_id}, 
+                                @SimSessionNo = {i.simsession_no}, 
+                                @StartLap = {i.start_lap}, 
+                                @EndLap = {i.end_lap}, 
+                                @StartTime = {i.start_time}, 
+                                @EndTime = {i.end_time}
+                            """)         
+    print ("Adding Caution Details to DB")
     CURSOR.commit()
 
 if __name__ == "__main__":
@@ -484,13 +552,15 @@ if __name__ == "__main__":
     apiTime = datetime.timedelta(0)
     startTime = datetime.datetime.now()
     apiCallCount = 0
+    runFlags = input("enter any run flags: ")
     session_id = input("Please enter comma separated list of session ids: ")
     for i in session_id.split(","):
         session_data = getSessionData(i.strip())
-        
-        processSessionLevelData(session_data)
-        processSessionDriverLevelData(session_data)
-        processLapLevelData(session_data)     
+        if (runFlags != "eventsonly"):
+            processSessionLevelData(session_data)
+            processSessionDriverLevelData(session_data)
+            processLapLevelData(session_data) 
+        processEventLogData(session_data)  
 
         print (f"All data gathering complete and data stored in database\nTotal API Calls: {apiCallCount}\nTotal Execution time: {datetime.datetime.now() - startTime}\nTime awaiting API responses:{apiTime}")   
 
