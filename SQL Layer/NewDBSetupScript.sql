@@ -883,5 +883,190 @@ FROM SessionEntries SE
 			L2.SessionEntryID = SE.SessionEntryID
 GO
 
-			
-			
+DROP VIEW IF EXISTS vw_EnhancedLapData2
+GO
+
+CREATE VIEW vw_EnhancedLapData2 AS
+
+--Identify which laps are clean, and which are valid for averages
+WITH LapValidityData AS 
+(
+	SELECT 
+		LapID
+		, DriverEntryID
+		, LapTime
+		, LapEndTime
+		, LapInSession
+		, SessionID
+		, ClassID
+		, CASE WHEN ([black flag] + [car contact] + [car reset] + [contact] + [discontinuity] + [invalid] + [lost control] + [off track] + [tow] + [interpolated crossing] + [clock smash]) = 0 THEN 1 ELSE 0 END AS CleanLap
+		, CASE WHEN ([black flag] + [car reset] + [discontinuity] + [invalid] + [tow] + [interpolated crossing] + [clock smash] + [pitted]) = 0 AND LapTime > 0 AND LapInSession > 1 AND UnderYellow = 0 THEN 1 ELSE 0 END AS ValidLapForAverages
+		, [invalid] AS Invalid
+		, [pitted] AS Pitted
+		, [off track] AS OffTrack
+		, [car contact] AS CarContact
+		, [contact] as Contact
+		, [lost control] as LostControl
+		, UnderYellow
+	FROM 
+		(
+			SELECT 
+				L.LapID
+				, L.DriverentryID
+				, L.LapTime
+				, L.LapEndTime
+				, L.LapInSession
+				, LE.LapEventType
+				, CASE WHEN CA.CautionID IS NOT NULL THEN 1 ELSE 0 END AS UnderYellow
+				, SE.SessionID
+				, C.ClassID
+			FROM Laps L
+			LEFT OUTER JOIN LapEvents LE ON L.LapID = LE.LapID
+			INNER JOIN DriverSessionEntries DSE ON
+				DSE.DriverEntryID = L.DriverEntryID
+			INNER JOIN SessionEntries SE ON
+				DSE.SessionEntryID = SE.SessionEntryID
+			INNER JOIN Cars C ON
+				SE.CarID = C.CarID
+			LEFT OUTER JOIN Cautions CA
+				ON SE.SessionID = CA.SessionID
+				AND (
+						L.LapEndTime BETWEEN CA.StartTime AND CA.EndTime
+						OR L.LapEndTime - L.LapTime BETWEEN CA.StartTime AND CA.EndTime
+					)
+		) AS LapEventData
+		PIVOT
+		(
+			COUNT(LapEventType)
+			FOR LapEventType IN ([black flag], [car contact], [car reset], [contact], [discontinuity], [invalid], [lost control], [off track], [pitted], [tow], [interpolated crossing], [clock smash])
+		) AS PivotTable
+)
+--Calculate a median lap per session and class
+, MedianValidLaps AS
+(
+	SELECT DISTINCT
+		PERCENTILE_CONT(0.5) WITHIN GROUP (Order By LVD.LapTime) OVER (PARTITION BY SE.SessionID, C.ClassID) AS MedianValidLap
+		, SE.SessionID
+		, C.ClassID
+	FROM
+	LapValidityData LVD
+	INNER JOIN DriverSessionEntries DSE ON
+		DSE.DriverEntryID = LVD.DriverEntryID
+	INNER JOIN SessionEntries SE ON
+		DSE.SessionEntryID = SE.SessionEntryID
+	INNER JOIN Cars C ON
+		SE.CarID = C.CarID
+	WHERE LVD.ValidLapForAverages = 1
+)
+--Calculate a MAD Value
+, MedianAbsoluteDeviation AS
+(
+	SELECT 
+		LVD.* 
+		, MVL.MedianValidLap
+		, ABS(MVL.MedianValidLap - LVD.LapTime) AS MedianDeviation
+		, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(MVL.MedianValidLap - LVD.LapTime)) OVER (PARTITION BY LVD.SessionID, LVD.ClassID) AS MedianAbsoluteDeviation
+	FROM LapValidityData LVD
+		LEFT OUTER JOIN MedianValidLaps MVL
+			ON LVD.SessionID = MVL.SessionID
+			AND LVD.ClassID = MVL.ClassID
+	WHERE LVD.ValidLapForAverages = 1
+)
+--Calculate a RobustZScore
+, RobustZScore AS
+(
+	SELECT 
+		MAD.*
+		, CASE WHEN MAD.MedianAbsoluteDeviation <> 0 THEN (MAD.LapTime-MAD.MedianValidLap)/MAD.MedianAbsoluteDeviation ELSE 0 END AS RobustZScore
+	FROM MedianAbsoluteDeviation MAD
+)
+
+--Identify the best valid (but not neccassarily clean) lap on each given lap, per session and class
+, ValidLapAverages AS
+(
+	SELECT
+		LVD.LapID
+		, LVD.LapInSession
+		, LVD.SessionID
+		, LVD.ClassID
+		, MIN (LVD.LapTime) OVER (PARTITION BY LVD.LapInSession, LVD.SessionID, LVD.ClassID) AS RawBestValidLapOnLapInSession
+		, AVG (LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverMeanValidLapInSession
+		, STDEVP (LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverStDevValidLapInSession
+		, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverMedianValidLapInSession
+	FROM LapValidityData LVD
+	WHERE LVD.ValidLapForAverages = 1 AND LVD.LapTime > 1
+)
+
+--Identify the best clean and valid lap on each given lap, per session and class
+, CleanLapAverages AS
+(
+	SELECT
+		LVD.LapID
+		, LVD.LapInSession
+		, LVD.SessionID
+		, LVD.ClassID
+		, MIN (LVD.LapTime) OVER (PARTITION BY LVD.LapInSession, LVD.SessionID, LVD.ClassID) AS RawBestCleanLapOnLapInSession
+		, AVG (LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverMeanCleanLapInSession
+		, STDEVP (LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverStDevCleanLapInSession
+		, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY LVD.LapTime) OVER (PARTITION BY LVD.DriverEntryID, LVD.SessionID) AS DriverMedianCleanLapInSession
+	FROM LapValidityData LVD
+	WHERE LVD.ValidLapForAverages = 1 AND LVD.LapTime > 1 AND LVD.CleanLap = 1
+)
+
+
+--Final results
+SELECT 
+	LVD.LapID
+	, LVD.DriverEntryID
+	, LVD.SessionID
+	, LVD.ClassID
+	, LVD.LapInSession
+	, LVD.LapEndTime
+	, RANK() OVER (PARTITION BY LVD.SessionID, LVD.ClassID, LVD.LapInSession ORDER BY LVD.LapEndTime) AS PositionOnLap
+	, LVD.LapEndTime - MIN(LVD.LapEndTime) OVER (PARTITION BY LVD.SessionID, LVD.ClassID, LVD.LapInSession ORDER BY LVD.LapEndTime) AS GapToLeader
+	, CASE WHEN LVD.LapTime > 0 THEN LVD.LapTime ELSE NULL END AS RawLapTime
+	, RZ.RobustZScore
+	, VLA.RawBestValidLapOnLapInSession
+	, CLA.RawBestCleanLapOnLapInSession
+	, VLA.DriverMeanValidLapInSession
+	, VLA.DriverStDevValidLapInSession
+	, CASE WHEN (100 * VLA.DriverStDevValidLapInSession / VLA.DriverMeanValidLapInSession) = 0 THEN NULL ELSE (100 * VLA.DriverStDevValidLapInSession / VLA.DriverMeanValidLapInSession) END AS ValidLapCoefficientOfVariation
+	, CLA.DriverMeanCleanLapInSession
+	, CLA.DriverStDevCleanLapInSession
+	, CASE WHEN (100 * CLA.DriverStDevCleanLapInSession / CLA.DriverMeanCleanLapInSession) = 0 THEN NULL ELSE (100 * CLA.DriverStDevCleanLapInSession / CLA.DriverMeanCleanLapInSession) END AS CleanLapCoefficientOfVariation
+	, LVD.CleanLap
+	, LVD.ValidLapForAverages
+	, LVD.UnderYellow
+	, LVD.Invalid
+	, LVD.Pitted
+	, LVD.OffTrack
+	, LVD.LostControl
+	, LVD.Contact
+	, LVD.CarContact
+	, CASE WHEN LVD.ValidLapForAverages = 1 AND VLA.DriverStDevValidLapInSession <> 0 THEN (VLA.DriverMedianValidLapInSession - LVD.LapTime) / VLA.DriverStDevValidLapInSession ELSE NULL END AS LapStDevsFromDriverMeanInSession
+	, CASE WHEN LVD.ValidLapForAverages = 1 AND VLA.DriverStDevValidLapInSession <> 0 THEN (VLA.DriverMedianValidLapInSession - LVD.LapTime) ELSE NULL END AS LapDeviationFromDriverMedianInSession
+	, CASE WHEN LVD.ValidLapForAverages = 1 AND VLA.DriverStDevValidLapInSession <> 0 THEN 100 * (VLA.DriverMedianValidLapInSession - LVD.LapTime) / VLA.DriverMedianValidLapInSession ELSE NULL END AS LapDeviationPercentageFromDriverMedianInSession
+FROM LapValidityData LVD
+	LEFT OUTER JOIN ValidLapAverages VLA ON
+		LVD.LapID = VLA.LapID
+	LEFT OUTER JOIN CleanLapAverages CLA ON
+		LVD.LapID = CLA.LapID
+	LEFT OUTER JOIN RobustZScore RZ ON
+		LVD.LapID = RZ.LapID
+WHERE (100 * VLA.DriverStDevValidLapInSession / VLA.DriverMeanValidLapInSession) = 0
+GO
+
+
+DROP VIEW IF EXISTS vw_TrackDetails
+GO
+
+CREATE VIEW vw_TrackDetails AS
+
+SELECT 
+	LA.LayoutID
+	, LA.LocationID
+	, CASE WHEN LA.LayoutName <> 'N/A' THEN LO.LocationName + ' - ' + LA.LayoutName ELSE LO.LocationName END As TrackName
+FROM Layouts LA 
+INNER JOIN Locations LO ON LA.LocationID = LO.LocationID
+
+GO

@@ -3612,3 +3612,19 @@ SessionEntryID,SessionID,SessionEntryiRacingID,EntryName,IsTeam,CarID,FinishPosI
 3835,126,391027,Jason Haddington,False,23,16,17,10,14,64.2006,25,2727.8339,16,17,17,Running,0
 3829,126,512936,Stephan Goebel,False,25,10,18,10,14,30.4059,25,2691.8555,10,18,18,Running,0
 3836,126,523326,Andrew Littler,False,24,17,19,10,10,1 Laps,24,2676.8818,17,19,19,Running,0
+3848,128,570468,Carsten Gieseler,False,24,2,1,10,0,0.9567,2,410.4912,2,0,0,Running,0
+3850,128,569679,Cody Hoylman,False,24,4,2,10,1,1.3442,2,315.8316,4,0,0,Running,0
+3851,128,626834,Loic Dubois,False,23,5,3,10,1,2.2895,2,420.51910000000004,5,0,0,Running,0
+3847,128,113905,Mats Caspersen Andersen,False,23,1,4,10,1,0 Laps,2,415.0924,1,0,0,Running,0
+3852,128,457592,Francis Mantha,False,24,6,5,10,1,2.9961,2,329.0254,6,0,0,Running,0
+3853,128,507367,Roland Pierre-Louis,False,24,7,6,10,1,3.3037,2,339.5138,7,0,0,Running,0
+3854,128,877388,Ross Duncan3,False,22,8,7,10,1,3.8335,2,372.2896,8,0,0,Running,0
+3849,128,284513,Sam Blease2,False,25,3,8,10,1,1.3347,1,437.0922,3,0,0,Running,0
+3855,129,113905,Mats Caspersen Andersen,False,23,1,1,10,13,0 Laps,19,2055.4245,1,1,1,Running,134
+3857,129,570468,Carsten Gieseler,False,24,3,2,10,6,8.8678,19,2064.7484,3,2,2,Running,95
+3861,129,284513,Sam Blease2,False,25,7,3,10,17,2 Laps,17,1875.9615000000001,7,3,3,Disqualified,19
+3856,129,569679,Cody Hoylman,False,24,2,4,10,9,4.4546,19,2059.9253,2,4,4,Running,114
+3858,129,457592,Francis Mantha,False,24,4,5,10,11,47.3685,19,2106.9864000000002,4,6,6,Running,76
+3859,129,507367,Roland Pierre-Louis,False,24,5,6,10,3,48.4216,19,2106.0984,5,7,7,Running,57
+3862,129,877388,Ross Duncan3,False,22,8,7,10,17,4 Laps,15,1705.7748,8,8,8,Disqualified,9
+3860,129,626834,Loic Dubois,False,23,6,8,10,6,75.2744,19,2133.8991,6,5,5,Running,38

@@ -102,5 +102,36 @@ with open(filename, 'w', newline='') as csvfile:
     csvwriter.writerow([i[0] for i in CURSOR.description])
     csvwriter.writerows(results)
 
+CURSOR.execute("SELECT * FROM Cautions")
+results = CURSOR.fetchall()
+
+filename = PATH + "/Cautions.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+CURSOR.execute("SELECT * FROM vw_EnhancedLapData2")
+results = CURSOR.fetchall()
+
+filename = PATH + "/LapDetails2.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+CURSOR.execute("SELECT * FROM vw_TrackDetails")
+results = CURSOR.fetchall()
+
+filename = PATH + "/TrackDetails.csv"
+
+with open(filename, 'w', newline='') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([i[0] for i in CURSOR.description])
+    csvwriter.writerows(results)
+
+
 CURSOR.close()
 CNXN.close()

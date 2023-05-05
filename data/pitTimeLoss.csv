@@ -1,4 +1,4 @@
-LapID,DriverEntryID,LapTime,LapStartTime,LapInSession,SessionEntryID,LapTimeLoss,PitInstanceInSession
+LapID,DriverEntryID,LapTime,LapEndTime,LapInSession,SessionEntryID,LapTimeLoss,PitInstanceInSession
 3,1,107.2374,2041.1173,2,1,5.091849999999994,1
 6,1,103.5823,2438.5691,5,1,1.4367500000000035,2
 7,1,1268.9834,5692.8671,15,1,1166.8378500000001,6
